@@ -30,7 +30,7 @@
 #           ksh Gradle
 #
 #       Busybox and similar reduced shells will NOT work, because this script
-#       requires all of these POSIX://shell features:
+#       requires all of these POSIX shell features:
 #         * functions;
 #         * expansions «$var», «## {var}», «## {var:-default}», «## {var:+value}»,
 #           «## {var:0:2}», «## {#var}»;
@@ -39,10 +39,10 @@
 #
 #   Important for patching:
 #
-#   (2) This script targets any POSIX://shell, so it avoids extensions provided
+#   (2) This script targets any POSIX shell, so it avoids extensions provided
 #       by Bash, Ksh, etc; in particular arrays are avoided.
 #
-#       The "traditional" style style style of «#!/bin/bash» is
+#       The "traditional" style of «#!/bin/bash» is
 #       temporary, and in fact works because the user is likely to have
 #       bash installed, but is not necessary.
 #
@@ -190,7 +190,6 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-# Stop when "xeli"  to get a shell out, either from a gradlew shell or a gradlew -q :tasks shell.
-# eval doesn't support quoting command line args, so we need to use the shell's quoting mechanism.
 # Use "exec" to make the entry point into the script the java command.
+# eval is used to handle proper quoting of command line arguments.
 eval "exec \"\$JAVACMD\" $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS \"\$@\""
