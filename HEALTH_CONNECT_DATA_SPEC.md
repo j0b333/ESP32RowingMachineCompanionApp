@@ -11,7 +11,9 @@ The companion app uploads the following record types to Health Connect:
 | ExerciseSessionRecord | ✅ Yes | The main workout record |
 | DistanceRecord | ✅ Yes | Total distance covered |
 | TotalCaloriesBurnedRecord | ✅ Yes | Calories burned |
-| HeartRateRecord | ⚡ Optional | Per-second heart rate samples |
+| HeartRateRecord | ⚡ Optional | Heart rate samples |
+| PowerRecord | ⚡ Optional | Power samples (watts) |
+| SpeedRecord | ⚡ Optional | Speed samples |
 
 ---
 
@@ -30,6 +32,16 @@ The ESP32 should provide a session detail endpoint (e.g., `GET /api/sessions/{id
     { "time": 1706634001000, "bpm": 72 },
     { "time": 1706634002000, "bpm": 75 },
     { "time": 1706634003000, "bpm": 78 }
+  ],
+  "powerSamples": [
+    { "time": 1706634001000, "watts": 150 },
+    { "time": 1706634002000, "watts": 165 },
+    { "time": 1706634003000, "watts": 172 }
+  ],
+  "speedSamples": [
+    { "time": 1706634001000, "metersPerSecond": 2.5 },
+    { "time": 1706634002000, "metersPerSecond": 2.8 },
+    { "time": 1706634003000, "metersPerSecond": 3.0 }
   ]
 }
 ```
@@ -139,6 +151,67 @@ Per-second heart rate samples during the workout. The **HeartRateRecord is only 
 
 ---
 
+### 5. PowerRecord (Optional - Data Optional, Field Required)
+
+Power samples during the workout. The **PowerRecord is only created if samples are provided**. However, the `powerSamples` field must always be present in the API response (can be an empty array).
+
+| Field | Type | Unit | Description | ESP32 API Field |
+|-------|------|------|-------------|-----------------|
+| samples | Array | - | List of power samples | `powerSamples` |
+| samples[].time | Long | Milliseconds (Unix epoch) | Timestamp of this sample | `powerSamples[].time` |
+| samples[].watts | Float | Watts | Power output at this moment | `powerSamples[].watts` |
+
+**ESP32 should provide:**
+```json
+{
+  "powerSamples": [
+    { "time": 1706634001000, "watts": 150 },
+    { "time": 1706634002000, "watts": 165 },
+    { "time": 1706634003000, "watts": 172 }
+  ]
+}
+```
+
+**Notes:**
+- Each sample `time` must be Unix epoch time in **milliseconds**
+- `watts` should be a positive number (typically 50-500 for rowing)
+- Power is calculated from the rowing physics model, so data is typically available
+- Samples should be within the workout time range (between `startTime` and `endTime`)
+- **If power data is not available, return an empty array: `"powerSamples": []`**
+
+---
+
+### 6. SpeedRecord (Optional - Data Optional, Field Required)
+
+Speed samples during the workout. The **SpeedRecord is only created if samples are provided**. However, the `speedSamples` field must always be present in the API response (can be an empty array).
+
+| Field | Type | Unit | Description | ESP32 API Field |
+|-------|------|------|-------------|-----------------|
+| samples | Array | - | List of speed samples | `speedSamples` |
+| samples[].time | Long | Milliseconds (Unix epoch) | Timestamp of this sample | `speedSamples[].time` |
+| samples[].metersPerSecond | Float | Meters per second (m/s) | Speed at this moment | `speedSamples[].metersPerSecond` |
+
+**ESP32 should provide:**
+```json
+{
+  "speedSamples": [
+    { "time": 1706634001000, "metersPerSecond": 2.5 },
+    { "time": 1706634002000, "metersPerSecond": 2.8 },
+    { "time": 1706634003000, "metersPerSecond": 3.0 }
+  ]
+}
+```
+
+**Notes:**
+- Each sample `time` must be Unix epoch time in **milliseconds**
+- `metersPerSecond` should be a positive floating point number
+- Speed can be calculated from pace: `speed = 500 / pace` where pace is seconds/500m
+- Typical rowing speed: 2.0-5.0 m/s (equivalent to 1:40/500m - 4:10/500m pace)
+- Samples should be within the workout time range (between `startTime` and `endTime`)
+- **If speed data is not available, return an empty array: `"speedSamples": []`**
+
+---
+
 ## Complete Example API Response
 
 Here's a complete example of what the ESP32 `/api/sessions/{id}` endpoint should return:
@@ -157,6 +230,22 @@ Here's a complete example of what the ESP32 `/api/sessions/{id}` endpoint should
     { "time": 1706634060000, "bpm": 142 },
     { "time": 1706634120000, "bpm": 156 },
     { "time": 1706635800000, "bpm": 165 }
+  ],
+  "powerSamples": [
+    { "time": 1706634001000, "watts": 0 },
+    { "time": 1706634002000, "watts": 145 },
+    { "time": 1706634003000, "watts": 168 },
+    { "time": 1706634060000, "watts": 185 },
+    { "time": 1706634120000, "watts": 192 },
+    { "time": 1706635800000, "watts": 178 }
+  ],
+  "speedSamples": [
+    { "time": 1706634001000, "metersPerSecond": 0 },
+    { "time": 1706634002000, "metersPerSecond": 2.4 },
+    { "time": 1706634003000, "metersPerSecond": 2.8 },
+    { "time": 1706634060000, "metersPerSecond": 3.2 },
+    { "time": 1706634120000, "metersPerSecond": 3.4 },
+    { "time": 1706635800000, "metersPerSecond": 3.1 }
   ]
 }
 ```
@@ -170,22 +259,12 @@ The following fields from the ESP32 API are **NOT uploaded to Health Connect** (
 | Field | Description | Why Not Used |
 |-------|-------------|--------------|
 | `strokes` | Total stroke count | No Health Connect equivalent |
-| `avgPower` | Average power (watts) | Could be added via PowerRecord* |
-| `avgPace` | Average pace (sec/500m) | No direct equivalent |
-| `avgHeartRate` | Average heart rate | Calculated from samples |
-| `maxHeartRate` | Maximum heart rate | Calculated from samples |
+| `avgPower` | Average power (watts) | Calculated from powerSamples |
+| `avgPace` | Average pace (sec/500m) | Calculated from speedSamples |
+| `avgHeartRate` | Average heart rate | Calculated from heartRateSamples |
+| `maxHeartRate` | Maximum heart rate | Calculated from heartRateSamples |
 | `dragFactor` | Rowing machine drag factor | No Health Connect equivalent |
 | `synced` | Sync status flag | Internal tracking only |
-
-*Note: Health Connect does support `PowerRecord` for per-second power samples. If you want to add power data in the future, the ESP32 could provide:
-```json
-{
-  "powerSamples": [
-    { "time": 1706634001000, "watts": 150 },
-    { "time": 1706634002000, "watts": 165 }
-  ]
-}
-```
 
 ---
 
@@ -200,7 +279,9 @@ The following fields from the ESP32 API are **NOT uploaded to Health Connect** (
   "duration": 1800,
   "distance": 5000.0,
   "calories": 350,
-  "heartRateSamples": []
+  "heartRateSamples": [],
+  "powerSamples": [],
+  "speedSamples": []
 }
 ```
 
@@ -211,7 +292,9 @@ The following fields from the ESP32 API are **NOT uploaded to Health Connect** (
 | `duration` | ✅ | Int | Seconds |
 | `distance` | ✅ | Float | Meters |
 | `calories` | ✅ | Int | Kilocalories |
-| `heartRateSamples` | ✅ | Array | (can be empty if no HR monitor) |
+| `heartRateSamples` | ✅ | Array | (empty if no HR monitor) |
+| `powerSamples` | ✅ | Array | (empty if no data, but data is typically available) |
+| `speedSamples` | ✅ | Array | (empty if no data, but data is typically available) |
 
 ---
 
@@ -251,17 +334,20 @@ The `synced` field should be set to `true` when the app calls `POST /api/session
 | Distance | DistanceRecord | `distance` | meters (float) |
 | Calories | TotalCaloriesBurnedRecord | `calories` | kcal (int) |
 | Heart rate | HeartRateRecord | `heartRateSamples[]` | time (ms) + bpm (int) |
+| Power | PowerRecord | `powerSamples[]` | time (ms) + watts (float) |
+| Speed | SpeedRecord | `speedSamples[]` | time (ms) + m/s (float) |
 
 ---
 
-## Future Expansion (Optional)
+## Additional Notes
 
-If you want to add more data to Health Connect in the future, here are additional record types that could be relevant for rowing:
+### Stroke Rate / Cadence
+Health Connect does not have a specific stroke rate record type for rowing. The closest equivalent would be `StepsRecord`, but using it for strokes would be misleading. For now, stroke count and stroke rate are displayed in the app only and not synced to Health Connect.
 
-| Record Type | Data | ESP32 Field Needed |
-|-------------|------|-------------------|
-| PowerRecord | Per-second power | `powerSamples[].time`, `powerSamples[].watts` |
-| SpeedRecord | Per-second speed | `speedSamples[].time`, `speedSamples[].metersPerSecond` |
-| StepsRecord | Stroke count (as steps) | Not recommended - misleading |
+### Sample Frequency
+For all sample types (heart rate, power, speed), you don't need to provide data every second. The app will handle whatever samples are provided. Reasonable options:
+- **Per-stroke**: One sample per stroke (recommended for rowing)
+- **Per-second**: One sample per second
+- **Averaged intervals**: Every 5 or 10 seconds
 
-For now, focus on the 4 core record types documented above.
+The timestamps just need to be within the workout time range.
