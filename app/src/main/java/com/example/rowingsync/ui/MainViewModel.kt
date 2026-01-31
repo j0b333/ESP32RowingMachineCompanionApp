@@ -23,6 +23,7 @@ data class MainUiState(
     val error: String? = null,
     val esp32Address: String = "rower.local",
     val syncingSessionId: Int? = null,
+    val deletingEsp32SessionId: Int? = null,
     val healthConnectAvailable: Boolean = false,
     val healthConnectPermissionsGranted: Boolean = false,
     val healthConnectSdkStatus: Int = 0,
@@ -226,6 +227,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             for (session in unsyncedSessions) {
                 syncSession(session.id)
             }
+        }
+    }
+    
+    /**
+     * Delete a session from ESP32
+     * Only synced sessions can be deleted to prevent data loss
+     */
+    fun deleteEsp32Session(sessionId: Int) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(deletingEsp32SessionId = sessionId)
+            
+            try {
+                val api = ApiClient.getApi(_uiState.value.esp32Address)
+                val response = api.deleteSession(sessionId)
+                Log.d(TAG, "Delete session response: status=${response.status}, success=${response.success}, error=${response.error}")
+                
+                if (response.success == true || response.status == "ok") {
+                    // Refresh session list to reflect the deletion
+                    refreshSessions()
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Failed to delete session: ${response.error ?: "Unknown error"}"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete ESP32 session", e)
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to delete session: ${e.message}"
+                )
+            } finally {
+                _uiState.value = _uiState.value.copy(deletingEsp32SessionId = null)
+            }
+        }
+    }
+    
+    /**
+     * Delete all synced sessions from ESP32
+     */
+    fun deleteAllSyncedEsp32Sessions() {
+        viewModelScope.launch {
+            val syncedSessions = _uiState.value.sessions.filter { it.synced }
+            
+            // Early return if no synced sessions (safety check)
+            if (syncedSessions.isEmpty()) {
+                return@launch
+            }
+            
+            var deletedCount = 0
+            var failedCount = 0
+            
+            for (session in syncedSessions) {
+                try {
+                    _uiState.value = _uiState.value.copy(deletingEsp32SessionId = session.id)
+                    val api = ApiClient.getApi(_uiState.value.esp32Address)
+                    val response = api.deleteSession(session.id)
+                    
+                    if (response.success == true || response.status == "ok") {
+                        deletedCount++
+                    } else {
+                        failedCount++
+                        Log.w(TAG, "Failed to delete session ${session.id}: ${response.error}")
+                    }
+                } catch (e: Exception) {
+                    failedCount++
+                    Log.e(TAG, "Exception deleting session ${session.id}", e)
+                }
+            }
+            
+            _uiState.value = _uiState.value.copy(deletingEsp32SessionId = null)
+            
+            if (failedCount > 0) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Successfully deleted $deletedCount workout(s), but $failedCount failed. Please try again or check your connection."
+                )
+            }
+            
+            // Refresh session list
+            refreshSessions()
         }
     }
     

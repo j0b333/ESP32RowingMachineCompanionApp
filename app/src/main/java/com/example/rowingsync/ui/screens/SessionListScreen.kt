@@ -40,11 +40,6 @@ fun SessionListScreen(viewModel: MainViewModel) {
                     IconButton(onClick = { viewModel.refreshSessions() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
-                    if (uiState.sessions.any { !it.synced }) {
-                        IconButton(onClick = { viewModel.syncAllSessions() }) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = "Sync All")
-                        }
-                    }
                 }
             )
         }
@@ -260,6 +255,10 @@ fun SessionListScreen(viewModel: MainViewModel) {
                     }
                 }
             } else {
+                var showDeleteAllSyncedDialog by remember { mutableStateOf(false) }
+                val unsyncedCount = uiState.sessions.count { !it.synced }
+                val syncedCount = uiState.sessions.count { it.synced }
+                
                 Card(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -269,17 +268,92 @@ fun SessionListScreen(viewModel: MainViewModel) {
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Bulk action buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Sync all unsynced button
+                            if (unsyncedCount > 0 && uiState.healthConnectAvailable) {
+                                Button(
+                                    onClick = { viewModel.syncAllSessions() },
+                                    modifier = Modifier.weight(1f),
+                                    enabled = uiState.syncingSessionId == null
+                                ) {
+                                    Icon(Icons.Default.CloudUpload, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Sync All ($unsyncedCount)")
+                                }
+                            }
+                            
+                            // Delete all synced button
+                            if (syncedCount > 0) {
+                                OutlinedButton(
+                                    onClick = { showDeleteAllSyncedDialog = true },
+                                    modifier = if (unsyncedCount > 0 && uiState.healthConnectAvailable) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+                                    enabled = uiState.deletingEsp32SessionId == null,
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Default.DeleteSweep, 
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Delete Synced ($syncedCount)")
+                                }
+                            }
+                        }
+                        
+                        if (unsyncedCount > 0 || syncedCount > 0) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         uiState.sessions.forEach { session ->
                             SessionCard(
                                 session = session,
                                 isSyncing = uiState.syncingSessionId == session.id,
+                                isDeleting = uiState.deletingEsp32SessionId == session.id,
                                 onSync = { viewModel.syncSession(session.id) },
+                                onDelete = { viewModel.deleteEsp32Session(session.id) },
                                 healthConnectAvailable = uiState.healthConnectAvailable
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
+                }
+                
+                // Delete All Synced Confirmation Dialog
+                if (showDeleteAllSyncedDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteAllSyncedDialog = false },
+                        icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+                        title = { Text("Delete All Synced Workouts?") },
+                        text = {
+                            Text("This will permanently delete $syncedCount synced workout${if (syncedCount != 1) "s" else ""} from the ESP32. The data has already been synced to Health Connect.")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showDeleteAllSyncedDialog = false
+                                    viewModel.deleteAllSyncedEsp32Sessions()
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Text("Delete All")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteAllSyncedDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
             }
 
@@ -375,10 +449,13 @@ fun ConnectionCard(
 fun SessionCard(
     session: SessionSummary,
     isSyncing: Boolean,
+    isDeleting: Boolean,
     onSync: () -> Unit,
+    onDelete: () -> Unit,
     healthConnectAvailable: Boolean
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -394,8 +471,9 @@ fun SessionCard(
                     style = MaterialTheme.typography.titleMedium
                 )
                 
-                if (session.synced) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                // Sync status indicator - always shown
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (session.synced) {
                         Icon(
                             Icons.Default.CloudDone,
                             contentDescription = "Synced",
@@ -407,6 +485,19 @@ fun SessionCard(
                             "Synced",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.CloudOff,
+                            contentDescription = "Not Synced",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Not Synced",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
@@ -440,28 +531,97 @@ fun SessionCard(
                 )
             }
             
-            if (!session.synced && healthConnectAvailable) {
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Action buttons row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Sync button - shown when not synced and Health Connect available
+                if (!session.synced && healthConnectAvailable) {
+                    Button(
+                        onClick = onSync,
+                        modifier = Modifier.weight(1f),
+                        enabled = !isSyncing
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isSyncing) "Syncing..." else "Sync")
+                    }
+                }
                 
-                Button(
-                    onClick = onSync,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSyncing
+                // Delete button - enabled only when synced
+                // When sync button is visible, both buttons share equal weight
+                // When sync button is hidden, delete button takes full width
+                val showSyncButton = !session.synced && healthConnectAvailable
+                OutlinedButton(
+                    onClick = { showDeleteDialog = true },
+                    modifier = if (showSyncButton) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+                    enabled = session.synced && !isDeleting,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (session.synced) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+                        disabledContentColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    )
                 ) {
-                    if (isSyncing) {
+                    if (isDeleting) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Icon(Icons.Default.CloudUpload, contentDescription = null)
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = if (session.synced && !isDeleting) 
+                            MaterialTheme.colorScheme.error 
+                        else 
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isSyncing) "Syncing..." else "Sync to Health Connect")
+                    Text(if (isDeleting) "Deleting..." else "Delete from ESP32")
                 }
             }
         }
+    }
+    
+    // Delete Confirmation Dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text("Delete Workout?") },
+            text = {
+                Text("This will permanently delete this workout from the ESP32. The data has already been synced to Health Connect.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
