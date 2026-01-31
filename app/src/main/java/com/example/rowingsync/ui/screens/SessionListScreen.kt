@@ -456,6 +456,7 @@ fun SessionCard(
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showResyncDialog by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -538,10 +539,18 @@ fun SessionCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Sync button - shown when not synced and Health Connect available
-                if (!session.synced && healthConnectAvailable) {
+                // Sync button - shown when Health Connect is available
+                // For unsynced items: directly sync
+                // For synced items: show confirmation dialog before re-syncing
+                if (healthConnectAvailable) {
                     Button(
-                        onClick = onSync,
+                        onClick = {
+                            if (session.synced) {
+                                showResyncDialog = true
+                            } else {
+                                onSync()
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                         enabled = !isSyncing
                     ) {
@@ -555,14 +564,14 @@ fun SessionCard(
                         }
                         Icon(Icons.Default.CloudUpload, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isSyncing) "Syncing..." else "Sync")
+                        Text(if (isSyncing) "Syncing..." else if (session.synced) "Re-sync" else "Sync")
                     }
                 }
                 
                 // Delete button - enabled only when synced
                 // When sync button is visible, both buttons share equal weight
                 // When sync button is hidden, delete button takes full width
-                val showSyncButton = !session.synced && healthConnectAvailable
+                val showSyncButton = healthConnectAvailable
                 OutlinedButton(
                     onClick = { showDeleteDialog = true },
                     modifier = if (showSyncButton) Modifier.weight(1f) else Modifier.fillMaxWidth(),
@@ -592,6 +601,33 @@ fun SessionCard(
                 }
             }
         }
+    }
+    
+    // Re-sync Confirmation Dialog
+    if (showResyncDialog) {
+        AlertDialog(
+            onDismissRequest = { showResyncDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("Re-sync Workout?") },
+            text = {
+                Text("This workout has already been synced to Health Connect. Syncing again will create a duplicate entry unless the original was deleted from Health Connect.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResyncDialog = false
+                        onSync()
+                    }
+                ) {
+                    Text("Sync Again")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResyncDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
     
     // Delete Confirmation Dialog
