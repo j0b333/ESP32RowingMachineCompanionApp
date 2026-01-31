@@ -12,7 +12,7 @@ Sync your rowing workouts to Google Health Connect, Samsung Health, Google Fit, 
 
 ## Quick Start
 
-1. Connect your phone to the ESP32's WiFi (`CrivitRower` / `rowing123`)
+1. Connect your phone to the ESP32's WiFi or over your local WLAN
 2. Open the app and enter `rower.local`
 3. Tap Connect to see your workouts
 4. Tap Sync on any workout to save it to Health Connect
