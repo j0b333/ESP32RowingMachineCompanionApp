@@ -33,12 +33,15 @@ data class SessionSummary(
     val calories: Int,
     val avgPower: Float,
     val avgPace: Float,
-    val avgHeartRate: Int = 0,
-    val maxHeartRate: Int = 0,
+    val avgHeartRate: Double = 0.0,
+    val maxHeartRate: Double = 0.0,
     val synced: Boolean = false,
     val hrSampleCount: Int = 0,
     val dragFactor: Float = 0f
-)
+) {
+    fun getAvgHeartRateInt(): Int = avgHeartRate.toInt()
+    fun getMaxHeartRateInt(): Int = maxHeartRate.toInt()
+}
 
 data class SessionsResponse(
     val sessions: List<SessionSummary>
@@ -47,6 +50,16 @@ data class SessionsResponse(
 data class HRSample(
     val time: Long,
     val bpm: Int
+)
+
+data class PowerSample(
+    val time: Long,
+    val watts: Float
+)
+
+data class SpeedSample(
+    val time: Long,
+    val metersPerSecond: Float
 )
 
 data class SessionDetail(
@@ -58,12 +71,17 @@ data class SessionDetail(
     val calories: Int,
     val avgPower: Float,
     val avgPace: Float,
-    val avgHeartRate: Int = 0,
-    val maxHeartRate: Int = 0,
+    val avgHeartRate: Double = 0.0,
+    val maxHeartRate: Double = 0.0,
     val synced: Boolean = false,
     val dragFactor: Float = 0f,
-    val heartRateSamples: List<HRSample> = emptyList()
-)
+    val heartRateSamples: List<HRSample> = emptyList(),
+    val powerSamples: List<PowerSample> = emptyList(),
+    val speedSamples: List<SpeedSample> = emptyList()
+) {
+    fun getAvgHeartRateInt(): Int = avgHeartRate.toInt()
+    fun getMaxHeartRateInt(): Int = maxHeartRate.toInt()
+}
 
 data class LiveData(
     val sessionId: Int,
@@ -86,8 +104,8 @@ data class WorkoutResponse(
     val strokes: Int? = null,
     val calories: Int? = null,
     val hrSamples: Int? = null,
-    val avgHeartRate: Int? = null,
-    val maxHeartRate: Int? = null
+    val avgHeartRate: Double? = null,
+    val maxHeartRate: Double? = null
 )
 
 data class GenericResponse(

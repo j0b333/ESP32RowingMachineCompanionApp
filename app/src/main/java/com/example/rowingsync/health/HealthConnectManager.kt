@@ -5,8 +5,6 @@ import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.*
-import androidx.health.connect.client.request.ReadRecordsRequest
-import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Length
 import com.example.rowingsync.data.SessionDetail
@@ -33,7 +31,11 @@ class HealthConnectManager(private val context: Context) {
             HealthPermission.getReadPermission(DistanceRecord::class),
             HealthPermission.getWritePermission(DistanceRecord::class),
             HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
-            HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class)
+            HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class),
+            HealthPermission.getReadPermission(PowerRecord::class),
+            HealthPermission.getWritePermission(PowerRecord::class),
+            HealthPermission.getReadPermission(SpeedRecord::class),
+            HealthPermission.getWritePermission(SpeedRecord::class)
         )
     }
     
@@ -133,6 +135,44 @@ class HealthConnectManager(private val context: Context) {
                 records.add(heartRateRecord)
             }
             
+            // Add power records if available
+            if (session.powerSamples.isNotEmpty()) {
+                val powerSamples = session.powerSamples.map { sample ->
+                    PowerRecord.Sample(
+                        time = Instant.ofEpochMilli(sample.time),
+                        power = androidx.health.connect.client.units.Power.watts(sample.watts.toDouble())
+                    )
+                }
+
+                val powerRecord = PowerRecord(
+                    startTime = startTime,
+                    startZoneOffset = zoneId.rules.getOffset(startTime),
+                    endTime = endTime,
+                    endZoneOffset = zoneId.rules.getOffset(endTime),
+                    samples = powerSamples
+                )
+                records.add(powerRecord)
+            }
+
+            // Add speed records if available
+            if (session.speedSamples.isNotEmpty()) {
+                val speedSamples = session.speedSamples.map { sample ->
+                    SpeedRecord.Sample(
+                        time = Instant.ofEpochMilli(sample.time),
+                        speed = androidx.health.connect.client.units.Velocity.metersPerSecond(sample.metersPerSecond.toDouble())
+                    )
+                }
+
+                val speedRecord = SpeedRecord(
+                    startTime = startTime,
+                    startZoneOffset = zoneId.rules.getOffset(startTime),
+                    endTime = endTime,
+                    endZoneOffset = zoneId.rules.getOffset(endTime),
+                    samples = speedSamples
+                )
+                records.add(speedRecord)
+            }
+
             // Insert all records
             healthConnectClient.insertRecords(records)
             

@@ -1,26 +1,38 @@
 package com.example.rowingsync.data
 
-import com.example.rowingsync.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import java.util.concurrent.TimeUnit
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.util.concurrent.TimeUnit
+import okhttp3.logging.HttpLoggingInterceptor.Level
+
+// Helper to detect debug build without a compile-time dependency on generated BuildConfig
+private fun isDebugBuild(): Boolean {
+    return try {
+        val cls = Class.forName("com.example.rowingsync.BuildConfig")
+        val field = cls.getField("DEBUG")
+        field.getBoolean(null)
+    } catch (e: Throwable) {
+        // If BuildConfig isn't available for some reason, default to false (safe for release)
+        false
+    }
+}
 
 /**
  * Singleton API client for ESP32 communication
  */
 object ApiClient {
-    private var currentBaseUrl: String = "http://192.168.4.1/"  // ESP32 AP mode default
+    private var currentBaseUrl: String = "http://rower.local/"  // ESP32 mDNS hostname
     private var retrofit: Retrofit? = null
     private var api: Esp32Api? = null
     
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         // Only log full bodies in debug builds to avoid performance/security issues
-        level = if (BuildConfig.DEBUG) {
-            HttpLoggingInterceptor.Level.BODY
+        level = if (isDebugBuild()) {
+            Level.BODY
         } else {
-            HttpLoggingInterceptor.Level.BASIC
+            Level.BASIC
         }
     }
     
@@ -34,7 +46,7 @@ object ApiClient {
     /**
      * Get API instance for the specified base URL
      * 
-     * @param baseUrl The ESP32 address (e.g., "192.168.4.1" or "rowing.local")
+     * @param baseUrl The ESP32 address (e.g., "rower.local" or "192.168.4.1")
      * @return Esp32Api instance
      */
     fun getApi(baseUrl: String = currentBaseUrl): Esp32Api {

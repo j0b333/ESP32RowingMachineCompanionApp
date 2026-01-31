@@ -10,5 +10,6 @@
         <domain includeSubdomains="true">172.16.0.0</domain>
         <!-- mDNS hostname -->
         <domain includeSubdomains="true">rowing.local</domain>
+        <domain includeSubdomains="true">rower.local</domain>
     </domain-config>
 </network-security-config>

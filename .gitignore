@@ -1,35 +1,76 @@
-# Android build artifacts
-*.iml
-.gradle
-/local.properties
-/.idea
-/build
-/captures
-.externalNativeBuild
-.cxx
+# Build / output
+.gradle/
+build/
+**/build/
+/captures/
+
+# Gradle wrapper - keep the wrapper properties and script, but ignore the caches
+.gradle/
+
+# Local configuration
 local.properties
 
-# App build artifacts
-/app/build
-/app/release
-
-# Keystore files
-*.jks
-*.keystore
-
-# Log files
-*.log
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+out/
 
 # OS generated files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# Crashlytics
-crashlytics.properties
-crashlytics-build.properties
-fabric.properties
+# Android artifacts
+*.apk
+*.ap_
+*.aab
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Signing files (keep them out of VCS)
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
+
+# Google services (often contains API keys)
+/app/google-services.json
+
+# Env files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Kotlin / Java
+*.class
+*.jar
+*.war
+*.ear
+
+# Misc
+.vscode/
+.idea/
+.gradle
+
+# Ignore generated protobuf / android bindings
+generated/
+
+# Ignore coverage and reports
+coverage/
+report/
+
+# Ignore local test results
+test-results/
+
+# Prevent accidental commits of debug keys or credentials
+**/credentials/**
+
+# Keep README, gradle files, source, and wrapper tracked
+
+# End of file
+

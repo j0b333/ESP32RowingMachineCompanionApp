@@ -20,7 +20,7 @@ data class MainUiState(
     val isConnected: Boolean = false,
     val sessions: List<SessionSummary> = emptyList(),
     val error: String? = null,
-    val esp32Address: String = "192.168.4.1",
+    val esp32Address: String = "rower.local",
     val syncingSessionId: Int? = null,
     val healthConnectAvailable: Boolean = false
 )
@@ -63,23 +63,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             try {
                 val api = ApiClient.getApi(_uiState.value.esp32Address)
-                val status = api.getStatus()
-                
-                if (status.online) {
-                    val sessionsResponse = api.getSessions()
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isConnected = true,
-                        sessions = sessionsResponse.sessions,
-                        error = null
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isConnected = false,
-                        error = "ESP32 reports it is not ready"
-                    )
-                }
+                val sessionsResponse = api.getSessions()
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    isConnected = true,
+                    sessions = sessionsResponse.sessions,
+                    error = null
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to connect to ESP32", e)
                 _uiState.value = _uiState.value.copy(

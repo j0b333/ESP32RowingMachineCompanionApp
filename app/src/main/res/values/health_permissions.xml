@@ -9,5 +9,9 @@
         <item>androidx.health.permission.Distance.WRITE</item>
         <item>androidx.health.permission.TotalCaloriesBurned.READ</item>
         <item>androidx.health.permission.TotalCaloriesBurned.WRITE</item>
+        <item>androidx.health.permission.Power.READ</item>
+        <item>androidx.health.permission.Power.WRITE</item>
+        <item>androidx.health.permission.Speed.READ</item>
+        <item>androidx.health.permission.Speed.WRITE</item>
     </array>
 </resources>
