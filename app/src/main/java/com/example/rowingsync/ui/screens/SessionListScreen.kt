@@ -1,21 +1,26 @@
 package com.example.rowingsync.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.rowingsync.data.SessionSummary
-import com.example.rowingsync.ui.MainUiState
+import com.example.rowingsync.health.HealthConnectManager.HealthConnectExercise
 import com.example.rowingsync.ui.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -25,7 +30,8 @@ import java.util.*
 fun SessionListScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     var addressInput by remember { mutableStateOf(uiState.esp32Address) }
-    
+    val context = LocalContext.current
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -43,11 +49,13 @@ fun SessionListScreen(viewModel: MainViewModel) {
             )
         }
     ) { padding ->
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
+                .verticalScroll(scrollState)
         ) {
             // Connection settings
             ConnectionCard(
@@ -96,64 +104,199 @@ fun SessionListScreen(viewModel: MainViewModel) {
             
             // Health Connect status
             if (!uiState.healthConnectAvailable) {
+                val statusMessage = viewModel.getHealthConnectStatusMessage()
+                val needsInstall = uiState.healthConnectSdkStatus ==
+                    androidx.health.connect.client.HealthConnectClient.SDK_UNAVAILABLE
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        containerColor = if (needsInstall)
+                            MaterialTheme.colorScheme.errorContainer
+                        else
+                            MaterialTheme.colorScheme.tertiaryContainer
                     )
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.HealthAndSafety, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Health Connect not available on this device")
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.HealthAndSafety,
+                                contentDescription = null,
+                                tint = if (needsInstall)
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                else
+                                    MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                statusMessage,
+                                color = if (needsInstall)
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                else
+                                    MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+
+                        if (needsInstall) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    // Open Health Connect in Play Store
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("market://details?id=com.google.android.apps.healthdata")
+                                    )
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // Fallback to web browser
+                                        val webIntent = Intent(
+                                            Intent.ACTION_VIEW,
+                                            Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata")
+                                        )
+                                        context.startActivity(webIntent)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Install Health Connect")
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            } else if (!uiState.healthConnectPermissionsGranted) {
+                // Show permission request card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.HealthAndSafety,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Health Connect Permissions Required",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Grant permissions to sync your rowing workouts to Health Connect.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { viewModel.requestHealthConnectPermissions() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Grant Permissions")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.openHealthConnectSettings() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Open Health Connect Settings")
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
-            
-            // Sessions list
+
+            // Sessions list (ESP32 workouts) - shown first
             if (uiState.isLoading) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
                 }
             } else if (uiState.sessions.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                Card(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.DirectionsBoat,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.outline
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "No sessions found",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.DirectionsBoat,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "No sessions on ESP32",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Text(
+                                "Connect to your rowing machine to see workouts",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
                 }
             } else {
-                LazyColumn {
-                    items(uiState.sessions) { session ->
-                        SessionCard(
-                            session = session,
-                            isSyncing = uiState.syncingSessionId == session.id,
-                            onSync = { viewModel.syncSession(session.id) },
-                            healthConnectAvailable = uiState.healthConnectAvailable
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "ESP32 Workouts",
+                            style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+
+                        uiState.sessions.forEach { session ->
+                            SessionCard(
+                                session = session,
+                                isSyncing = uiState.syncingSessionId == session.id,
+                                onSync = { viewModel.syncSession(session.id) },
+                                healthConnectAvailable = uiState.healthConnectAvailable
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Health Connect Workouts Management Section - shown after ESP32 sessions
+            if (uiState.healthConnectAvailable && uiState.healthConnectPermissionsGranted) {
+                HealthConnectWorkoutsSection(
+                    showWorkouts = uiState.showHealthConnectWorkouts,
+                    workouts = uiState.healthConnectWorkouts,
+                    isLoading = uiState.isLoadingHealthConnectWorkouts,
+                    deletingWorkoutId = uiState.deletingWorkoutId,
+                    onToggle = { viewModel.toggleHealthConnectWorkouts() },
+                    onRefresh = { viewModel.loadHealthConnectWorkouts() },
+                    onDelete = { workoutId -> viewModel.deleteHealthConnectWorkout(workoutId) },
+                    onDeleteAll = { viewModel.deleteAllHealthConnectWorkouts() }
+                )
             }
         }
     }
@@ -358,3 +501,232 @@ fun formatDuration(seconds: Int): String {
         String.format("%d:%02d", minutes, secs)
     }
 }
+
+@Composable
+fun HealthConnectWorkoutsSection(
+    showWorkouts: Boolean,
+    workouts: List<HealthConnectExercise>,
+    isLoading: Boolean,
+    deletingWorkoutId: String?,
+    onToggle: () -> Unit,
+    onRefresh: () -> Unit,
+    onDelete: (String) -> Unit,
+    onDeleteAll: () -> Unit
+) {
+    var showDeleteAllDialog by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.HealthAndSafety,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Health Connect Workouts",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                Row {
+                    if (showWorkouts) {
+                        IconButton(onClick = onRefresh, enabled = !isLoading) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
+                    }
+                    IconButton(onClick = onToggle) {
+                        Icon(
+                            if (showWorkouts) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (showWorkouts) "Collapse" else "Expand"
+                        )
+                    }
+                }
+            }
+
+            if (showWorkouts) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (workouts.isEmpty()) {
+                    Text(
+                        "No rowing workouts found in Health Connect",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                } else {
+                    Text(
+                        "${workouts.size} rowing workout${if (workouts.size != 1) "s" else ""} stored",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Delete All button
+                    OutlinedButton(
+                        onClick = { showDeleteAllDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Delete All Rowing Workouts")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // List of workouts
+                    workouts.forEach { workout ->
+                        HealthConnectWorkoutCard(
+                            workout = workout,
+                            isDeleting = deletingWorkoutId == workout.id,
+                            onDelete = { onDelete(workout.id) }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    // Delete All Confirmation Dialog
+    if (showDeleteAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("Delete All Workouts?") },
+            text = {
+                Text("This will permanently delete all ${workouts.size} rowing workout${if (workouts.size != 1) "s" else ""} from Health Connect. This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAllDialog = false
+                        onDeleteAll()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete All")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun HealthConnectWorkoutCard(
+    workout: HealthConnectExercise,
+    isDeleting: Boolean,
+    onDelete: () -> Unit
+) {
+    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        workout.title ?: workout.getExerciseTypeName(),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        dateFormat.format(Date.from(workout.startTime)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Text(
+                        "${workout.durationMinutes} minutes",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+
+                IconButton(
+                    onClick = { showDeleteDialog = true },
+                    enabled = !isDeleting
+                ) {
+                    if (isDeleting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Delete Confirmation Dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+            title = { Text("Delete Workout?") },
+            text = {
+                Text("This will permanently delete this workout and all associated data (heart rate, calories, etc.) from Health Connect.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+

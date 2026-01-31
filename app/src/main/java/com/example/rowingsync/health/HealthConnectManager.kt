@@ -5,11 +5,14 @@ import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.*
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Length
 import com.example.rowingsync.data.SessionDetail
 import java.time.Instant
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * Manager for Health Connect integration
@@ -182,5 +185,201 @@ class HealthConnectManager(private val context: Context) {
             Log.e(TAG, "Failed to sync session to Health Connect", e)
             false
         }
+    }
+
+    /**
+     * Data class representing an exercise session stored in Health Connect
+     */
+    data class HealthConnectExercise(
+        val id: String,
+        val title: String?,
+        val exerciseType: Int,
+        val startTime: Instant,
+        val endTime: Instant,
+        val durationMinutes: Long
+    ) {
+        fun getExerciseTypeName(): String {
+            return when (exerciseType) {
+                ExerciseSessionRecord.EXERCISE_TYPE_ROWING_MACHINE -> "Rowing Machine"
+                ExerciseSessionRecord.EXERCISE_TYPE_ROWING -> "Rowing"
+                else -> "Exercise ($exerciseType)"
+            }
+        }
+    }
+
+    /**
+     * Read all exercise sessions written by this app from Health Connect
+     *
+     * @param daysBack Number of days to look back (default 365)
+     * @return List of exercise sessions
+     */
+    suspend fun getExerciseSessions(daysBack: Long = 365): List<HealthConnectExercise> {
+        if (!isAvailable()) {
+            Log.e(TAG, "Health Connect is not available")
+            return emptyList()
+        }
+
+        if (!hasAllPermissions()) {
+            Log.e(TAG, "Missing required Health Connect permissions")
+            return emptyList()
+        }
+
+        return try {
+            val endTime = Instant.now()
+            val startTime = endTime.minus(daysBack, ChronoUnit.DAYS)
+
+            val request = ReadRecordsRequest(
+                recordType = ExerciseSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+
+            val response = healthConnectClient.readRecords(request)
+
+            // Filter to only include rowing sessions (from our app)
+            response.records
+                .filter { record ->
+                    record.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_ROWING_MACHINE ||
+                    record.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_ROWING
+                }
+                .map { record ->
+                    HealthConnectExercise(
+                        id = record.metadata.id,
+                        title = record.title,
+                        exerciseType = record.exerciseType,
+                        startTime = record.startTime,
+                        endTime = record.endTime,
+                        durationMinutes = ChronoUnit.MINUTES.between(record.startTime, record.endTime)
+                    )
+                }
+                .sortedByDescending { it.startTime }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read exercise sessions from Health Connect", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Delete an exercise session and its associated records from Health Connect
+     *
+     * @param exerciseId The ID of the exercise session to delete
+     * @return true if deletion was successful
+     */
+    suspend fun deleteExerciseSession(exerciseId: String): Boolean {
+        if (!isAvailable()) {
+            Log.e(TAG, "Health Connect is not available")
+            return false
+        }
+
+        if (!hasAllPermissions()) {
+            Log.e(TAG, "Missing required Health Connect permissions")
+            return false
+        }
+
+        return try {
+            // First, find the exercise session to get its time range
+            val endTime = Instant.now()
+            val startTime = endTime.minus(365, ChronoUnit.DAYS)
+
+            val request = ReadRecordsRequest(
+                recordType = ExerciseSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+
+            val response = healthConnectClient.readRecords(request)
+            val sessionToDelete = response.records.find { it.metadata.id == exerciseId }
+
+            if (sessionToDelete == null) {
+                Log.e(TAG, "Exercise session not found: $exerciseId")
+                return false
+            }
+
+            // Delete the exercise session record
+            healthConnectClient.deleteRecords(
+                ExerciseSessionRecord::class,
+                recordIdsList = listOf(exerciseId),
+                clientRecordIdsList = emptyList()
+            )
+
+            // Also try to delete associated records in the same time range
+            // These may have been written together with the exercise session
+            val sessionStart = sessionToDelete.startTime
+            val sessionEnd = sessionToDelete.endTime
+            val timeRange = TimeRangeFilter.between(sessionStart, sessionEnd)
+
+            // Delete distance records in this time range
+            try {
+                healthConnectClient.deleteRecords(
+                    DistanceRecord::class,
+                    timeRange
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not delete distance records", e)
+            }
+
+            // Delete calories records in this time range
+            try {
+                healthConnectClient.deleteRecords(
+                    TotalCaloriesBurnedRecord::class,
+                    timeRange
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not delete calories records", e)
+            }
+
+            // Delete heart rate records in this time range
+            try {
+                healthConnectClient.deleteRecords(
+                    HeartRateRecord::class,
+                    timeRange
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not delete heart rate records", e)
+            }
+
+            // Delete power records in this time range
+            try {
+                healthConnectClient.deleteRecords(
+                    PowerRecord::class,
+                    timeRange
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not delete power records", e)
+            }
+
+            // Delete speed records in this time range
+            try {
+                healthConnectClient.deleteRecords(
+                    SpeedRecord::class,
+                    timeRange
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not delete speed records", e)
+            }
+
+            Log.i(TAG, "Successfully deleted exercise session $exerciseId and associated records")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete exercise session from Health Connect", e)
+            false
+        }
+    }
+
+    /**
+     * Delete all rowing exercise sessions from Health Connect
+     *
+     * @return Number of sessions deleted
+     */
+    suspend fun deleteAllRowingSessions(): Int {
+        val sessions = getExerciseSessions()
+        var deletedCount = 0
+
+        for (session in sessions) {
+            if (deleteExerciseSession(session.id)) {
+                deletedCount++
+            }
+        }
+
+        Log.i(TAG, "Deleted $deletedCount rowing sessions from Health Connect")
+        return deletedCount
     }
 }

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.rowingsync.data.ApiClient
 import com.example.rowingsync.data.SessionSummary
 import com.example.rowingsync.health.HealthConnectManager
+import com.example.rowingsync.health.HealthConnectManager.HealthConnectExercise
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +23,14 @@ data class MainUiState(
     val error: String? = null,
     val esp32Address: String = "rower.local",
     val syncingSessionId: Int? = null,
-    val healthConnectAvailable: Boolean = false
+    val healthConnectAvailable: Boolean = false,
+    val healthConnectPermissionsGranted: Boolean = false,
+    val healthConnectSdkStatus: Int = 0,
+    // Health Connect workout management
+    val healthConnectWorkouts: List<HealthConnectExercise> = emptyList(),
+    val isLoadingHealthConnectWorkouts: Boolean = false,
+    val deletingWorkoutId: String? = null,
+    val showHealthConnectWorkouts: Boolean = false
 )
 
 /**
@@ -38,14 +46,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
     
     private val healthConnectManager = HealthConnectManager(application)
-    
+    private var permissionLauncher: ((Set<String>) -> Unit)? = null
+    private var openHealthConnectSettingsLauncher: (() -> Unit)? = null
+
     init {
         // Check Health Connect availability
+        val sdkStatus = androidx.health.connect.client.HealthConnectClient.getSdkStatus(application)
+        Log.d(TAG, "Health Connect SDK Status in ViewModel: $sdkStatus")
         _uiState.value = _uiState.value.copy(
-            healthConnectAvailable = healthConnectManager.isAvailable()
+            healthConnectAvailable = healthConnectManager.isAvailable(),
+            healthConnectSdkStatus = sdkStatus
         )
     }
-    
+
+    /**
+     * Get a human-readable description of the Health Connect status
+     */
+    fun getHealthConnectStatusMessage(): String {
+        return when (_uiState.value.healthConnectSdkStatus) {
+            androidx.health.connect.client.HealthConnectClient.SDK_UNAVAILABLE ->
+                "Health Connect is not installed. Please install it from the Play Store."
+            androidx.health.connect.client.HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
+                "Health Connect needs to be updated. Please update it from the Play Store."
+            androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE ->
+                "Health Connect is available"
+            else ->
+                "Unknown Health Connect status"
+        }
+    }
+
+    /**
+     * Set the permission launcher from the Activity
+     */
+    fun setPermissionLauncher(launcher: (Set<String>) -> Unit) {
+        permissionLauncher = launcher
+    }
+
+    /**
+     * Set the Health Connect settings launcher from the Activity
+     */
+    fun setOpenHealthConnectSettingsLauncher(launcher: () -> Unit) {
+        openHealthConnectSettingsLauncher = launcher
+    }
+
+    /**
+     * Open Health Connect settings directly
+     */
+    fun openHealthConnectSettings() {
+        Log.d(TAG, "Opening Health Connect settings directly")
+        openHealthConnectSettingsLauncher?.invoke()
+    }
+
+    /**
+     * Check if Health Connect permissions are granted
+     */
+    fun checkHealthConnectPermissions() {
+        if (!_uiState.value.healthConnectAvailable) {
+            return
+        }
+
+        viewModelScope.launch {
+            val hasPermissions = healthConnectManager.hasAllPermissions()
+            _uiState.value = _uiState.value.copy(
+                healthConnectPermissionsGranted = hasPermissions
+            )
+        }
+    }
+
+    /**
+     * Request Health Connect permissions
+     */
+    fun requestHealthConnectPermissions() {
+        Log.d(TAG, "requestHealthConnectPermissions called")
+        Log.d(TAG, "Permission launcher: ${if (permissionLauncher != null) "initialized" else "NULL!"}")
+        Log.d(TAG, "Requesting ${HealthConnectManager.PERMISSIONS.size} permissions")
+        permissionLauncher?.invoke(HealthConnectManager.PERMISSIONS)
+    }
+
     /**
      * Update ESP32 address
      */
@@ -105,13 +182,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (success) {
                     // Mark as synced on ESP32
                     try {
+                        Log.d(TAG, "Marking session $sessionId as synced on ESP32 at ${_uiState.value.esp32Address}")
                         val markResponse = api.markSynced(sessionId)
+                        Log.d(TAG, "Mark synced response: status=${markResponse.status}, success=${markResponse.success}, error=${markResponse.error}")
                         if (markResponse.error != null) {
                             Log.w(TAG, "Failed to mark session as synced on ESP32: ${markResponse.error}")
+                            _uiState.value = _uiState.value.copy(
+                                error = "Synced to Health Connect, but ESP32 marking failed: ${markResponse.error}"
+                            )
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to mark session as synced on ESP32", e)
-                        // Continue anyway since the Health Connect sync succeeded
+                        Log.e(TAG, "Exception marking session as synced on ESP32", e)
+                        _uiState.value = _uiState.value.copy(
+                            error = "Synced to Health Connect, but couldn't mark on ESP32: ${e.message}"
+                        )
                     }
                     
                     // Refresh session list
@@ -150,5 +234,98 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    /**
+     * Toggle display of Health Connect workouts section
+     */
+    fun toggleHealthConnectWorkouts() {
+        val newShowState = !_uiState.value.showHealthConnectWorkouts
+        _uiState.value = _uiState.value.copy(showHealthConnectWorkouts = newShowState)
+        if (newShowState) {
+            loadHealthConnectWorkouts()
+        }
+    }
+
+    /**
+     * Load all rowing workouts from Health Connect
+     */
+    fun loadHealthConnectWorkouts() {
+        if (!_uiState.value.healthConnectAvailable || !_uiState.value.healthConnectPermissionsGranted) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingHealthConnectWorkouts = true)
+
+            try {
+                val workouts = healthConnectManager.getExerciseSessions()
+                _uiState.value = _uiState.value.copy(
+                    healthConnectWorkouts = workouts,
+                    isLoadingHealthConnectWorkouts = false
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load Health Connect workouts", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoadingHealthConnectWorkouts = false,
+                    error = "Failed to load Health Connect workouts: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Delete a single workout from Health Connect
+     */
+    fun deleteHealthConnectWorkout(workoutId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(deletingWorkoutId = workoutId)
+
+            try {
+                val success = healthConnectManager.deleteExerciseSession(workoutId)
+
+                if (success) {
+                    // Refresh the list
+                    loadHealthConnectWorkouts()
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Failed to delete workout from Health Connect"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete Health Connect workout", e)
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to delete workout: ${e.message}"
+                )
+            } finally {
+                _uiState.value = _uiState.value.copy(deletingWorkoutId = null)
+            }
+        }
+    }
+
+    /**
+     * Delete all rowing workouts from Health Connect
+     */
+    fun deleteAllHealthConnectWorkouts() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingHealthConnectWorkouts = true)
+
+            try {
+                val deletedCount = healthConnectManager.deleteAllRowingSessions()
+
+                // Refresh the list
+                loadHealthConnectWorkouts()
+
+                if (deletedCount > 0) {
+                    Log.i(TAG, "Deleted $deletedCount workouts from Health Connect")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete all Health Connect workouts", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoadingHealthConnectWorkouts = false,
+                    error = "Failed to delete workouts: ${e.message}"
+                )
+            }
+        }
     }
 }
