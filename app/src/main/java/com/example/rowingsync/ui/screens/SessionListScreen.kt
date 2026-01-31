@@ -560,9 +560,12 @@ fun SessionCard(
                 }
                 
                 // Delete button - enabled only when synced
+                // When sync button is visible, both buttons share equal weight
+                // When sync button is hidden, delete button takes full width
+                val showSyncButton = !session.synced && healthConnectAvailable
                 OutlinedButton(
                     onClick = { showDeleteDialog = true },
-                    modifier = if (!session.synced && healthConnectAvailable) Modifier else Modifier.fillMaxWidth(),
+                    modifier = if (showSyncButton) Modifier.weight(1f) else Modifier.fillMaxWidth(),
                     enabled = session.synced && !isDeleting,
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = if (session.synced) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,

@@ -269,10 +269,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val syncedSessions = _uiState.value.sessions.filter { it.synced }
             
+            // Early return if no synced sessions (safety check)
             if (syncedSessions.isEmpty()) {
-                _uiState.value = _uiState.value.copy(
-                    error = "No synced sessions to delete"
-                )
                 return@launch
             }
             
@@ -301,7 +299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             if (failedCount > 0) {
                 _uiState.value = _uiState.value.copy(
-                    error = "Deleted $deletedCount sessions, $failedCount failed"
+                    error = "Successfully deleted $deletedCount workout(s), but $failedCount failed. Please try again or check your connection."
                 )
             }
             
