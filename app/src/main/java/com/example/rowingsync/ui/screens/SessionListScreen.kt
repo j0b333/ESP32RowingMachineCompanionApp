@@ -610,7 +610,7 @@ fun SessionCard(
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
             title = { Text("Re-sync Workout?") },
             text = {
-                Text("This workout has already been synced to Health Connect. Are you sure you want to sync it again? This may create a duplicate entry in Health Connect.")
+                Text("This workout has already been synced to Health Connect. Syncing again will create a duplicate entry unless the original was deleted from Health Connect.")
             },
             confirmButton = {
                 TextButton(
