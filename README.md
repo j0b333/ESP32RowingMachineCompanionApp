@@ -37,3 +37,7 @@ The rowing physics model is based on the excellent work of the **[Open Rowing Mo
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
+
+## AI Disclaimer 
+
+This was done purely as a hobby project for my own usage. Therefore it was also almost completly vibe coded. You are free to use or add on to it as you see fit but I cannot guarantee great code.
